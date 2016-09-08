@@ -8,6 +8,10 @@
 #include "misc.h"
 
 void config_pic(void){
+    /**************************OSCILLATOR****************************/
+    OSCCON=OSCCON & 0x87;
+    OSCCON=OSCCON | 0x70;
+    /**************************MISC****************************/
     RCIF=0;
     INTF=0;
     TXREG=0;

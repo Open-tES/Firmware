@@ -12,10 +12,11 @@
 #include <xc.h>
 #include <pic.h>
 #include <string.h>
-#define BUZZER RC4  // E=bit0 du PORTC
+#define BUZZER RB5
+
 #define _XTAL_FREQ 32000000
 // CONFIG1
-#pragma config FOSC = HS       // Oscillator Selection (ECH, External Clock, High Power Mode (4-32 MHz): device clock supplied to CLKIN pin)
+#pragma config FOSC = INTOSC       // Oscillator Selection (ECH, External Clock, High Power Mode (4-32 MHz): device clock supplied to CLKIN pin)
 #pragma config WDTE = OFF       // Watchdog Timer Enable (WDT disabled)
 #pragma config PWRTE = ON       // Power-up Timer Enable (PWRT enabled)
 #pragma config MCLRE = ON       // MCLR Pin Function Select (MCLR/VPP pin function is MCLR)
@@ -29,7 +30,7 @@
 // CONFIG2
 #pragma config WRT = OFF        // Flash Memory Self-Write Protection (Write protection off)
 #pragma config VCAPEN = OFF     // Voltage Regulator Capacitor Enable (All VCAP pin functionality is disabled)
-#pragma config PLLEN = OFF      // PLL Enable (4x PLL disabled)
+#pragma config PLLEN = ON      // PLL Enable (4x PLL disabled)
 #pragma config STVREN = ON      // Stack Overflow/Underflow Reset Enable (Stack Overflow or Underflow will cause a Reset)
 #pragma config BORV = LO        // Brown-out Reset Voltage Selection (Brown-out Reset Voltage (Vbor), low trip point selected.)
 #pragma config LVP = ON         // Low-Voltage Programming Enable (Low-voltage programming enabled)
@@ -43,13 +44,13 @@ unsigned char SnapShootButton=0;
 unsigned int  StimDuration=1200;
 unsigned int  VarStimDuration=500;
 unsigned char FadeInDuration=2;
-unsigned int FadeInSampleRate=20;
+unsigned int  FadeInSampleRate=20;
 unsigned char FadeOutDuration=2;
-unsigned int FadeOutSampleRate=20;
-unsigned int TMR4SampleRate=20;
+unsigned int  FadeOutSampleRate=20;
+unsigned int  TMR4SampleRate=20;
 unsigned char Intensity=200;
-unsigned int VarIntensity=0;
-unsigned int TmpVarIntensity=0;//Used in Computer control mod to check value
+unsigned int  VarIntensity=0;
+unsigned int  TmpVarIntensity=0;//Used in Computer control mod to check value
 unsigned char VarVoltage=125;
 unsigned char VarImpedance=123;
 unsigned char StimulationState=0;//-1_FadeOut 0_Maintain +1_FadeIn
@@ -59,12 +60,12 @@ unsigned char StimulationState=0;//-1_FadeOut 0_Maintain +1_FadeIn
 unsigned char PostSacleTMR1=16;
 unsigned char PostSacleTMR6=25;
 unsigned char FlagCaptState=0;// 1 in progress //0 done
-unsigned int CaptIntensity=0;
-unsigned int CaptTension=0;
-unsigned int CaptRAWIntensity=0;
-unsigned int CaptRAWTension=0;
-unsigned int CaptImpedance=0;
-unsigned int ThresholdImpedance=100;//1=0.1Kohm
+unsigned int  CaptIntensity=0;
+unsigned int  CaptTension=0;
+unsigned int  CaptRAWIntensity=0;
+unsigned int  CaptRAWTension=0;
+unsigned int  CaptImpedance=0;
+unsigned int  ThresholdImpedance=100;//1=0.1Kohm
 unsigned char TmpChar=0;
 unsigned char i=0;
 unsigned char FlagRefreshDisplay=0;
@@ -156,7 +157,7 @@ void interrupt INIT_erruptgetIT(void){
             switch (StimulationState){
                 case 0x02://Stimulation
                     if(--VarStimDuration==0){
-                    StimulationState=0x10;
+                    StimulationState=0x13;
                     }
                     break;
                 case 0x04://Computer control
@@ -188,13 +189,13 @@ void interrupt INIT_erruptgetIT(void){
     if(ADIF && ADIE){//AN0 et AN1 ont été inversé dans eagle. La modif est faite dans la section suivante. vérifier qu'il n'y a pas d'autre bug
         if ((ADCON0&0x7C)==0x00){//Channel AN0 selected (voltage)
             ADCON0=ADCON0|0x04; // Channel AN1 selected (current)
-            CaptRAWTension=(ADRESH<<8)+ADRESL;
+            CaptRAWIntensity=(ADRESH<<8)+ADRESL;
             NOP();NOP();NOP();NOP();
             ADIF=0;
             GO_nDONE=1;   // Start next convertion on AN1
              }
         else if((ADCON0&0x7C)==0x04){//Channel AN1 selected (voltage)
-            CaptRAWIntensity=(ADRESH<<8)+ADRESL;
+            CaptRAWTension=(ADRESH<<8)+ADRESL;
             ADCON0=ADCON0&0x83;//Channel AN0 selected (current)
             ADIF=0;
             FlagCaptState=2;
@@ -350,9 +351,9 @@ void main(void) {
     /**********************Hello world*************************/
     WriteStringOnLine(BufferLCD_1,(char*)"UFR-ST",'c',0);
     WriteStringOnLine(BufferLCD_2,(char*)"Neuro",'c',0);
-    __delay_ms(15);
+    __delay_ms(500);
     BUZZER=1;
-    __delay_ms(50);
+    __delay_ms(1000);
     BUZZER=0;
     /**********************Loop forever*****************************************/
     while(1){//Loop forever
@@ -661,12 +662,14 @@ void main(void) {
             // <editor-fold defaultstate="collapsed" desc="execution of requests : change of stimulation state ">
             switch (StimulationState){
                 case 0x10 : //request for stop stimulation
-                    if (FlagMenu!=0x13){
-                        TMR6IE=0; TMR6ON=0;
+                    if (FlagMenu==0x12){//Coming from stimulation, not from pause
+                    TMR6IE=0; TMR6ON=0;
                     RCEN=0;
                     TXEN=0;
                     RCIE=0;
                     TXIE=0;
+                    FlagMenu=0x10;//go to main menu
+                    FlagRefreshMenu=1;
                     }
                     TMR1IE=0; TMR4IE=0;
                     TMR1ON=0; TMR4ON=0;
@@ -700,7 +703,7 @@ void main(void) {
                     TMR4ON=1; 
                     TMR6ON=1;
                     break;
-                case 0x14 : //request for fade out
+                case 0x14 : //request for computer control mode
                     TMR1L=0xDB; TMR1H=0x0B; TMR1IF=0; TMR1IE=1;
                     TMR6=0, TMR6IF=0; TMR6IE=1;
                     StimulationState=0x04;
@@ -769,7 +772,7 @@ void main(void) {
                     else {
                         FlagRefreshDisplay=0;
                     }
-
+                break;
             }
         }
     }//End while(1)
