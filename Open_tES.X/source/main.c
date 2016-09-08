@@ -186,16 +186,16 @@ void interrupt INIT_erruptgetIT(void){
         }
     }//End TIMER6
     /****************************Capture**************************/
-    if(ADIF && ADIE){//AN0 et AN1 ont été inversé dans eagle. La modif est faite dans la section suivante. vérifier qu'il n'y a pas d'autre bug
+    if(ADIF && ADIE){
         if ((ADCON0&0x7C)==0x00){//Channel AN0 selected (voltage)
             ADCON0=ADCON0|0x04; // Channel AN1 selected (current)
-            CaptRAWIntensity=(ADRESH<<8)+ADRESL;
+            CaptRAWTension=(ADRESH<<8)+ADRESL;
             NOP();NOP();NOP();NOP();
             ADIF=0;
             GO_nDONE=1;   // Start next convertion on AN1
              }
         else if((ADCON0&0x7C)==0x04){//Channel AN1 selected (voltage)
-            CaptRAWTension=(ADRESH<<8)+ADRESL;
+            CaptRAWIntensity=(ADRESH<<8)+ADRESL;
             ADCON0=ADCON0&0x83;//Channel AN0 selected (current)
             ADIF=0;
             FlagCaptState=2;
