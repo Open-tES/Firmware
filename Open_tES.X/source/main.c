@@ -202,7 +202,6 @@ void interrupt INIT_erruptgetIT(void){
     }//End Capt
     /***************************RS232*****************************/
     if(TXIF==1 && TXIE==1){//Transmition
-        BUZZER=1;
          //  <editor-fold defaultstate="collapsed" desc="RS232 Transmition">
         switch (CounterForTxBuffer){
             case -1 ://Nothing to send
