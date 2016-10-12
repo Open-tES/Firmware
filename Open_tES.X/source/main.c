@@ -52,7 +52,7 @@ unsigned int VarIntensity=0;
 unsigned int TmpVarIntensity=0;//Used in Computer control mod to check value
 unsigned char VarVoltage=125;
 unsigned char VarImpedance=123;
-unsigned char StimulationState=0;//-1_FadeOut 0_Maintain +1_FadeIn
+unsigned char StimulationState=0;//0xAB A=1->request for B B= 0-stop 1-fadein 2-stim 3-fadeout 4-computer-controlled
          char StrBuffer_8[8];
          char StrBuffer_4[4];
          char SymbolPauseStop=0;//used for switch beetwen menu 0x12 and 0x13
@@ -72,7 +72,7 @@ unsigned char DisplayCursor=0;
 /*******************USART*************************/
 char TX_Buffer[10];
 char TX_Prefix=0;
-signed char CounterForTxBuffer=-1;
+signed char CounterForTxBuffer=-1; //-1 nothing to send  -2 TX_buffer is read else is used like counter to write buffer in TXREG    
 char RC_Buffer[10];
 char CHAR_RCREG=0;
 signed char CounterForRCBuffer=0;
@@ -188,13 +188,13 @@ void interrupt INIT_erruptgetIT(void){
     if(ADIF && ADIE){//AN0 et AN1 ont été inversé dans eagle. La modif est faite dans la section suivante. vérifier qu'il n'y a pas d'autre bug
         if ((ADCON0&0x7C)==0x00){//Channel AN0 selected (voltage)
             ADCON0=ADCON0|0x04; // Channel AN1 selected (current)
-            CaptRAWTension=(ADRESH<<8)+ADRESL;
+            CaptRAWIntensity=(ADRESH<<8)+ADRESL;
             NOP();NOP();NOP();NOP();
             ADIF=0;
             GO_nDONE=1;   // Start next convertion on AN1
              }
         else if((ADCON0&0x7C)==0x04){//Channel AN1 selected (voltage)
-            CaptRAWIntensity=(ADRESH<<8)+ADRESL;
+            CaptRAWTension=(ADRESH<<8)+ADRESL;
             ADCON0=ADCON0&0x83;//Channel AN0 selected (current)
             ADIF=0;
             FlagCaptState=2;
@@ -202,6 +202,7 @@ void interrupt INIT_erruptgetIT(void){
     }//End Capt
     /***************************RS232*****************************/
     if(TXIF==1 && TXIE==1){//Transmition
+        BUZZER=1;
          //  <editor-fold defaultstate="collapsed" desc="RS232 Transmition">
         switch (CounterForTxBuffer){
             case -1 ://Nothing to send
@@ -209,6 +210,7 @@ void interrupt INIT_erruptgetIT(void){
             case -2 : //Send a prefix
                 TXREG=TX_Prefix;
                 CounterForTxBuffer=0;
+                //BUZZER=1;
                 break;
             default :
                 if (TX_Buffer[CounterForTxBuffer]!=0x00){//Channel AN0 selected (current)
@@ -465,8 +467,12 @@ void main(void) {
                             FlagMenu=0x12;
                             VarStimDuration=StimDuration;//Init Countdown
                             StimulationState=0x11;//StartingFade i
+                            if (FlagRS232Enable==1)
+                            {TXEN=1;}//start USART 
                             break;
-                        case 0x14 :FlagMenu=0x10; StimulationState=0x10; break;
+                        case 0x14 :FlagMenu=0x10; StimulationState=0x10;
+                            if (FlagRS232Enable==1)
+                            {TXEN=0;}//stop USART 
                         case 0x20 :FlagMenu=0x21; break;
                         case 0x21 :
                             EEPROM_WRITE(ADDR_StimDuration_L, (char)(StimDuration&0x00FF));
@@ -664,9 +670,7 @@ void main(void) {
                     if (FlagMenu!=0x13){
                         TMR6IE=0; TMR6ON=0;
                     RCEN=0;
-                    TXEN=0;
                     RCIE=0;
-                    TXIE=0;
                     }
                     TMR1IE=0; TMR4IE=0;
                     TMR1ON=0; TMR4ON=0;
@@ -674,7 +678,8 @@ void main(void) {
                     TMR1IE=1; TMR1ON=1;
                     StimulationState=0x00;
                     set_pwm(0);
-                    TXEN=0;
+                    //TXEN=0;
+                    TX_Prefix='#';
                     break;
                 case 0x11 : //request for fade in
                     CounterForTxBuffer=-1;
@@ -685,12 +690,14 @@ void main(void) {
                     TMR4SampleRate=FadeInSampleRate;//Time base 1/2024us
                     TMR4ON=1;
                     TMR6ON=1;
+                    TX_Prefix='+';
                     break;
                 case 0x12 : //request for stop fade in and start stimulation
                     TMR4IE=0; TMR4ON=0;
                     TMR1L=0xDB; TMR1H=0x0B;
                     TMR1IE=1; TMR1ON=1;
                     StimulationState=0x02;
+                    TX_Prefix='*';
                     break;
                 case 0x13 : //request for fade out
                     TMR1IE=0; TMR1ON=0;
@@ -699,8 +706,9 @@ void main(void) {
                     TMR4SampleRate=FadeOutSampleRate;//Time base 1/2024us
                     TMR4ON=1; 
                     TMR6ON=1;
+                    TX_Prefix='-';
                     break;
-                case 0x14 : //request for fade out
+                case 0x14 : //request for mode computer-controlling
                     TMR1L=0xDB; TMR1H=0x0B; TMR1IF=0; TMR1IE=1;
                     TMR6=0, TMR6IF=0; TMR6IE=1;
                     StimulationState=0x04;
@@ -715,8 +723,8 @@ void main(void) {
             }
         }
         // </editor-fold>
-        /* the next section involve the calculation of intensity voltage and resistor*/
-        if (FlagCaptState==2){
+        /* Calculation of intensity, voltage and resistor*/
+        if (FlagCaptState==2){ //A2D conversion is done for intensity and voltage
             if (CaptRAWIntensity>4){
                 CaptImpedance=(unsigned int)(((unsigned short long)(CaptRAWTension<<3))*143/CaptRAWIntensity);
             }
@@ -725,36 +733,30 @@ void main(void) {
             }
             CaptTension=(CaptRAWTension<<1)/7; 
             CaptIntensity=CaptRAWIntensity>>2;
-            /*Alert if impedance is to high*/
-            if (ThresholdImpedance<CaptImpedance){
+            if (ThresholdImpedance<CaptImpedance){ //Alert if impedance is to high
                 BUZZER=1;
             }
-            if (FlagRS232Enable==1 && StimulationState!=0x04 ){
-                Num2Str(TX_Buffer,CaptImpedance,1,(char*)"KR");
-                switch (StimulationState){
-                    case 0x01 : TX_Prefix='+';break;
-                    case 0x02 : TX_Prefix='*';break;
-                    case 0x03 : TX_Prefix='-';break;
-                    case 0x00 : TX_Prefix='#';break;
-                }
-                CounterForTxBuffer=-2;
+            if(FlagCapt2TX_GO_DONE==1 && StimulationState==0x04){
+               switch (TX_Prefix){
+                   case 'v' : itoa(TX_Buffer,CaptRAWTension,10);
+                   CounterForTxBuffer=-2;
+                   TXIE=1;
+                   break;
+                   case 'i' : itoa(TX_Buffer,CaptRAWIntensity,10);
+                   CounterForTxBuffer=-2;
+                   TXIE=1;
+                   break;
+               }
+               FlagCapt2TX_GO_DONE=0;
             }
-             if(FlagCapt2TX_GO_DONE==1){
-                switch (TX_Prefix){
-                    case 'v' : itoa(TX_Buffer,CaptRAWTension,10);
-                    CounterForTxBuffer=-2;
-                    break;
-                    case 'i' : itoa(TX_Buffer,CaptRAWIntensity,10);
-                    CounterForTxBuffer=-2;
-                    break;
-                }
-                FlagCapt2TX_GO_DONE=0;
+            if (FlagRS232Enable==1 && StimulationState!=0x04 ){
+               Num2Str(TX_Buffer,CaptImpedance,1,(char*)"KR");
+               CounterForTxBuffer=-2;
+               TXIE=1;
             }
             FlagCaptState=0;
+
         }//End of variable calculation
-        if (CounterForTxBuffer==-2){
-            TXIE=1;
-        }
         if (FlagRefreshDisplay>0){
             switch(FlagRefreshDisplay){
                 case 2 : FlagRefreshDisplay=1;SetDDRamAddress(0x00);DisplayCursor=0;break;
