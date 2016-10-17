@@ -155,8 +155,8 @@ void interrupt INIT_erruptgetIT(void){
             PostSacleTMR1=16;
             switch (StimulationState){
                 case 0x02://Stimulation
-                    if(--VarStimDuration==0){
-                    StimulationState=0x10;
+                    if(--VarStimDuration==0){//Stimulation is done
+                    StimulationState=0x13;//request for fadeout
                     }
                     break;
                 case 0x04://Computer control
@@ -665,20 +665,27 @@ void main(void) {
         if (StimulationState>0x0F){
             // <editor-fold defaultstate="collapsed" desc="execution of requests : change of stimulation state ">
             switch (StimulationState){
-                case 0x10 : //request for stop stimulation
-                    if (FlagMenu!=0x13){
-                        TMR6IE=0; TMR6ON=0;
-                    RCEN=0;
-                    RCIE=0;
-                    }
+                case 0x10 : //request for pause/stop stimulation
+                    /********for pause*******/
                     TMR1IE=0; TMR4IE=0;
                     TMR1ON=0; TMR4ON=0;
                     TMR1=0; TMR1L=0xDB; TMR1H=0x0B;
                     TMR1IE=1; TMR1ON=1;
                     StimulationState=0x00;
                     set_pwm(0);
-                    //TXEN=0;
                     TX_Prefix='#';
+                    /*******for stop********/
+                    if (FlagMenu!=0x13){
+                        TMR6IE=0; TMR6ON=0;
+                        RCIE=0;
+                        RCEN=0; 
+                    }
+                    if (FlagMenu==0x12){
+                        FlagMenu=0x10;
+                        FlagRefreshMenu=1;
+                        RCIE=0;
+                        RCEN=0;
+                    }
                     break;
                 case 0x11 : //request for fade in
                     CounterForTxBuffer=-1;
